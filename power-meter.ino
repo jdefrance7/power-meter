@@ -1,581 +1,306 @@
 //===================================================
-// ARDUINO
+// LIBRARIES
 //===================================================
 
-// Core Arduino Library
+//---------------------------------------------------
+// Core Libraries
+
 #include <Arduino.h>
-
-// Core SPI Library
 #include <SPI.h>
-
-// Core I2C Library
 #include <Wire.h>
 
-//===================================================
-// BLUETOOTH
-//===================================================
+//---------------------------------------------------
+// Custom Libraries
 
-// Bluetooth Core Library
-#include <Adafruit_BLE.h>
-
-// Bluetooth SPI Library
-#include <Adafruit_BluefruitLE_SPI.h>
-
-// Bluetooth Configs
-#define BUFSIZE                     128
-#define VERBOSE_MODE                true
-#define BLUEFRUIT_SPI_CS            A5
-#define BLUEFRUIT_SPI_IRQ           A4
-#define BLUEFRUIT_SPI_RST           -1
-#define FACTORYRESET_ENABLE         0 // {0:Run 1:Test}
-#define MINIMUM_FIRMWARE_VERSION    "0.6.6"
-#define MODE_LED_BEHAVIOUR          "MODE"
-
-// Bluetooth Object
-Adafruit_BluefruitLE_SPI ble(BLUEFRUIT_SPI_CS, BLUEFRUIT_SPI_IRQ, BLUEFRUIT_SPI_RST);
-
-// Bluetooth Initialization
-int initBluetooth()
-{
-  // Attempts communication with bluetooth module
-  if(!ble.begin(VERBOSE_MODE))
-  {
-    return -1;
-  }
-
-  // Checks for factory reset (should be disabled for production)
-  if(FACTORYRESET_ENABLE)
-  {
-    if(!ble.factoryReset())
-    {
-      return -1;
-    }
-  }
-
-  // Turns off echo for send/recieve
-  ble.echo(false);
-
-  // Turns off verbose output mode
-  ble.verbose(false);
-
-  // Checks bluetooth module version for LED behavior
-  if(ble.isVersionAtLeast(MINIMUM_FIRMWARE_VERSION))
-  {
-    ble.sendCommandCheckOK("AT+HWModeLED=" MODE_LED_BEHAVIOUR);
-  }
-
-  // Sets bluetooth module to data mode
-  ble.setMode(BLUEFRUIT_MODE_DATA);
-
-  return 0;
-}
+//#include "battery.h"
+#include "bluetooth.h"
+#include "button.h"
+#include "datalogger.h"
+#include "display.h"
+#include "led.h"
+#include "relay.h"
+#include "rtc.h"
+#include "sensor.h"
 
 //===================================================
-// DISPLAY
+// CONFIGS
 //===================================================
 
-// Graphics Library
-#include <Adafruit_GFX.h>
+//---------------------------------------------------
+// Update Rate
 
-// SSD1306 Library
-#include <Adafruit_SSD1306.h>
+#define UPDATE_RATE_MS 1000
 
-// Display Library
-#include <Adafruit_FeatherOLED.h>
-
-// Display Object
-Adafruit_SSD1306 oled = Adafruit_FeatherOLED();
-
-// OLED Initializer
-int initDisplay()
-{
-  oled.init();
-  oled.setBatteryVisible(true);
-  oled.setTextSize(1);
-  oled.setTextColor(SSD1306_WHITE);
-  oled.clearDisplay();
-  oled.display();
-
-  return 0;
-}
-
-//===================================================
-// RTC
-//===================================================
-
-// RTC Library
-#include <RTClib.h>
-
-// RTC Object
-RTC_PCF8523 rtc;
-
-// RTC Initializer
-int initRTC()
-{
-  if(!rtc.begin())
-  {
-    return -1;
-  }
-  else if(!rtc.initialized())
-  {
-    return -1;
-  }
-  else
-  {
-    return 0;
-  }
-}
-
-//===================================================
-// SENSOR
-//===================================================
-
-// INA260 Library
-#include <Adafruit_INA260.h>
-
-// Sensor Configs
-#define AVERAGING_COUNT           INA260_COUNT_16
-#define VOLTAGE_CONVERSION_TIME   INA260_TIME_140_us
-#define CURRENT_CONVERSION_TIME   INA260_TIME_140_us
-
-// Sensor Object
-Adafruit_INA260 sensor = Adafruit_INA260();
-
-// Sensor Initialization
-int initSensor()
-{
-  if(!sensor.begin())
-  {
-    return -1;
-  }
-  else
-  {
-    sensor.setAveragingCount(AVERAGING_COUNT);
-    sensor.setVoltageConversionTime(INA260_TIME_140_us);
-    sensor.setCurrentConversionTime(INA260_TIME_140_us);
-    return 0;
-  }
-}
-
-//===================================================
-// SERIAL
-//===================================================
-
+//---------------------------------------------------
 // Serial Baudrate
+
 #define SERIAL_BAUDRATE 115200
 
-// Serial Timeout
-#define SERIAL_TIMEOUT 1000
-
-// Serial Initialization
-int initSerial()
-{
-  // Begins serial module
-  Serial.begin(SERIAL_BAUDRATE);
-
-  // No timeout
-  if(SERIAL_TIMEOUT == 0)
-  {
-    return 0;
-  }
-
-  // Timeout loop for module initialization
-  long counter = millis();
-  while(!Serial)
-  {
-    if(millis() - counter > SERIAL_TIMEOUT)
-    {
-      return -1;
-    }
-  }
-
-  return 0;
-}
-
-//===================================================
-// BATTERY
-//===================================================
-
+//---------------------------------------------------
 // Battery Pin
-#define BATTERY_PIN A7
 
-// Battery Low Voltage
+#define BATTERY_PIN A7
 #define BATTERY_LOW 3.3
 
-// Battery Class
-class Battery
-{
-public:
-    Battery()
-    {
-        _pin = BATTERY_PIN;
-    }
-    Battery(int pin)
-    {
-        _pin = pin;
-    }
-    void init()
-    {
-        pinMode(_pin, INPUT);
-    }
-    int pin()
-    {
-        return _pin;
-    }
-    float voltage()
-    {
-        float measuredvbat = analogRead(_pin);
-        measuredvbat *= 2;    // we divided by 2, so multiply back
-        measuredvbat *= 3.3;  // Multiply by 3.3V, our reference voltage
-        measuredvbat /= 1024; // convert to voltage
-        return measuredvbat;
-    }
-private:
-    int _pin;
-}
+//---------------------------------------------------
+// Sensor Settings
 
-// Battery Object
-Battery battery = Battery();
+#define SENSOR_AVERAGING_COUNT  INA260_COUNT_16
+#define VOLTAGE_CONVERSION_TIME INA260_TIME_140_us
+#define CURRENT_CONVERSION_TIME INA260_TIME_140_us
 
-// Battery Initialization
-int initBattery()
-{
-    battery.init();
-    return 0;
-}
+//---------------------------------------------------
+// Bluefruit Pins
 
-//===================================================
-// SD
-//===================================================
+#define BLUEFRUIT_SPI_CS  8
+#define BLUEFRUIT_SPI_IRQ 7
+#define BLUEFRUIT_SPI_RST 4
 
-// Datalogger Chip Select
-#define SD_CS 4
+//---------------------------------------------------
+// Datalogger Pin
 
-// Datalogger Initialization
-int initSD()
-{
-    pinMode(SD_CS, OUTPUT);
-    if(!SD.begin(SD_CS))
-    {
-        return -1;
-    }
-    else
-    {
-        return 0;
-    }
-}
+#define DATALOGGER_CS 10
 
-//===================================================
-// RELAY
-//===================================================
-
+//---------------------------------------------------
 // Relay Pin
+
 #define RELAY_PIN 12
 
-// Relay Values
-#define RELAY_OPEN    0
-#define RELAY_CLOSED  1
-
-// Relay Class
-class Relay
-{
-public:
-    Relay()
-    {
-        _pin = RELAY_PIN;
-        _status = false;
-    }
-    Relay(int pin)
-    {
-        _pin = pin;
-    }
-    void init()
-    {
-        pinMode(_pin, OUTPUT);
-        open();
-    }
-    void open()
-    {
-        _status = false;
-        digitalWrite(_pin, _status);
-    }
-    void close()
-    {
-        _status = true;
-        digitalWrite(_pin, _status);
-    }
-    void toggle()
-    {
-        _status = !status;
-        digitalWrite(_pin, _status);
-    }
-    int pin()
-    {
-        return _pin;
-    }
-    bool status()
-    {
-        return _status;
-    }
-    bool isOpen()
-    {
-        return !_status;
-    }
-    bool isClosed()
-    {
-        return _status;
-    }
-private:
-    int _pin;
-    bool _status;
-}
-
-// Relay Object
-Relay relay = Relay();
-
-// Relay Initializer
-int initRelay()
-{
-    relay.init();
-    return 0;
-}
-
-//===================================================
-// BUTTONS
-//===================================================
-
+//---------------------------------------------------
 // Button Pins
+
 #define BUTTON_PIN_A  9
 #define BUTTON_PIN_B  6
 #define BUTTON_PIN_C  5
 
-// Button Class
-class Button
-{
-public:
-    Button()
-    {
-        _pin = -1;
-    }
-    Button(int pin)
-    {
-        _pin = pin;
-    }
-    void init()
-    {
-        pinMode(_pin, INPUT_PULLUP);
-    }
-    int pin()
-    {
-        return _pin;
-    }
-    bool isPressed()
-    {
-        return !digitalRead(_pin);
-    }
-private:
-    int _pin;
-}
-
-// Button Objects
-Button bA = Button(BUTTON_PIN_A);
-Button bB = Button(BUTTON_PIN_B);
-Button bC = Button(BUTTON_PIN_C);
-
-// Buttons Initializer
-int initButtons()
-{
-    bA.init();
-    bB.init();
-    bC.init();
-    return 0;
-}
-
 //===================================================
-// LED
+// OJBECTS
 //===================================================
 
-#define BUILTIN_LED 13
+//---------------------------------------------------
+// Bluetooth Object
 
-class LED
-{
-public:
-    LED()
-    {
-        _pin = BUILTIN_LED; 
-        _status = false;
-    }
-    LED(int pin)
-    {
-        _pin = pin; 
-        _status = false;
-    }
-    void on()
-    {
-        _status = true;
-        digitalWrite(_pin, HIGH);
-    }
-    void off()
-    {
-        _status = false;
-        digitalWrite(_pin, LOW);
-    }
-    void toggle()
-    {
-        _status = !status;
-        digitalwrite(_pin, _status);
-    }
-    int pin()
-    {
-        return _pin;
-    }
-    bool status()
-    {
-        return _status;
-    }
-    bool isOn()
-    {
-        return _status;
-    }
-    bool isOff()
-    {
-        return !_status;
-    }
-private:
-    int _pin;
-    bool _status;
-}
+Adafruit_BluefruitLE_SPI ble(BLUEFRUIT_SPI_CS, BLUEFRUIT_SPI_IRQ, BLUEFRUIT_SPI_RST);
 
-int initLED()
-{
-    pinMode(led.pin(), INPUT);
-    led.off();
-    return 0;
-}
+//---------------------------------------------------
+// Display Object
 
-LED led = LED();
+Adafruit_FeatherOLED oled = Adafruit_FeatherOLED();
 
-//===================================================
-// GLOBALS
-//===================================================
+//---------------------------------------------------
+// RTC Object
 
-// Time Reference
-unsigned long time_reference;
+RTC_PCF8523 rtc = RTC_PCF8523();
 
-// Power Readings
-float sensor_voltage;
-float sensor_current;
-float sensor_power;
+//---------------------------------------------------
+// Sensor Object
 
-// Battery Voltage
-float battery_voltage;
+Adafruit_INA260 sensor = Adafruit_INA260();
 
-// Log File
+//---------------------------------------------------
+// File Object
+
 File logfile;
-char log_line[64];
 
-// Display Line
-char display_line[24];
+//===================================================
+// FUNCTIONS
+//===================================================
+
+float getBatteryVoltage(int pin)
+{
+  float measuredvbat = analogRead(pin);
+  measuredvbat *= 2;
+  measuredvbat *= 3.3;
+  measuredvbat /= 1024;
+  return measuredvbat;
+}
 
 //===================================================
 // SETUP
 //===================================================
 
 void setup()
-{
-    // Main Board
-    initLED();
-    initBluetooth();
-    initBattery();
+{    
+    //-----------------------------------------------
+    // Serial
+    
+    Serial.begin(SERIAL_BAUDRATE);
+    Serial.println("Timestamp | Voltage | Current | Power | Battery");
 
-    // Relay Board
-    initRelay();
-
-    // Sensor Board
-    initSensor();
-
-    // Datalogger Board
-    initRTC();
-    initSD();
-
-    // Display Board
-    initButtons();
-    initDisplay();
-}
-
-//===================================================
-// MAIN
-//===================================================
-
-void main()
-{
-    // TODO: Update Time Reference
-    time_reference = rtc.now().secondstime(); // Seconds since 2000-01-01
-    time_reference = (unsigned long)(millis() / 1000); // Seconds since power up
-
-    // TODO: Update Sensor Readings
-    sensor_voltage = sensor.readBusVoltage();
-    sensor_current = sensor.readCurrent();
-    sensor_power = sensor.readPower();
-
-    // TODO: Update Battery Voltage
-    battery_voltage = battery.voltage();
-
-    // TODO: Update Logfile
-    if(logfile)
-    {
-        
-    }
-
-    // TODO: Update Display
+    //-----------------------------------------------
+    // Display
+    
+    oled.init();
     oled.clearDisplay();
-    oled.setCursor(0,0);
-    oled.setBattery(battery_voltage);
+    oled.setTextSize(1);
+    oled.setTextColor(SSD1306_WHITE);
+    oled.setBatteryVisible(true);
+    oled.setBattery(getBatteryVoltage(BATTERY_PIN));
     oled.renderBattery();
+    oled.setCursor(0,0);
 
-    memset(display_line, 0, 24);
-    if(relay.isOpen())
+    //-----------------------------------------------
+    // Bluetooth
+    
+    oled.print("BLE: ");
+    if(ble.begin(true))
     {
-        sprintf(display_line, "Relay: OPEN");
+      ble.echo(false);
+      ble.verbose(false);
+      ble.sendCommandCheckOK("AT+HWModeLED=" MODE_LED_BEHAVIOUR);
+      ble.setMode(BLUEFRUIT_MODE_DATA);
+      ble.println("Timestamp | Voltage | Current | Power | Battery");
+      oled.println("OK");
+      oled.display();
     }
     else
     {
-        sprintf(display_line, "Relay: CLOSED");
+      oled.println("FAIL");
+      oled.display();
+      while(1);
     }
-    oled.println(display_line);
 
-    memset(display_line, 0, 24);
-    sprintf(display_line, "Voltage: %fV", voltage);
-    oled.println(display_line);
-
-    memset(display_line, 0, 24);
-    sprintf(display_line, "Current: %fmA", current);
-    oled.println(display_line);
-
-    memset(display_line, 0, 24);
-    sprintf(display_line, "Power: %fmW", power);
-    oled.println(display_line);
-
-    // TODO: Read Bluetooth Commands
-    if(ble.isConnected())
+    //-----------------------------------------------
+    // Datalogger
+    
+    oled.print("SD: ");  
+    if(SD.begin(DATALOGGER_CS))
     {
-        if(ble.available())
+      oled.println("OK");
+      oled.display();
+    }
+    else
+    {
+      oled.println("FAIL");
+      oled.display();
+      while(1);
+    }    
+
+    //-----------------------------------------------
+    // Real Time Clock
+    
+    oled.print("RTC: ");  
+    if(rtc.begin())
+    {
+      oled.println("OK");
+      oled.display();
+    }
+    else
+    {
+      oled.println("FAIL");
+      oled.display();
+      while(1);
+    }
+
+    //-----------------------------------------------
+    // Power Sensor
+    
+    oled.print("INA: ");  
+    if(sensor.begin())
+    {
+      sensor.setAveragingCount(SENSOR_AVERAGING_COUNT);
+      sensor.setVoltageConversionTime(VOLTAGE_CONVERSION_TIME);    
+      sensor.setCurrentConversionTime(CURRENT_CONVERSION_TIME);
+      oled.println("OK");  
+      oled.display();
+    }
+    else
+    {
+      oled.println("FAIL");
+      oled.display();
+      while(1);
+    }
+
+    //-----------------------------------------------
+    // Logfile
+    
+    char filename[24];
+    DateTime start = rtc.now();
+    
+    sprintf(filename, "T-%02u%02u%02u.txt", start.hour(), start.minute(), start.second());
+    
+    oled.print(filename);
+    oled.display();
+    
+    logfile = SD.open(filename, FILE_WRITE);
+    if(logfile)
+    {
+      logfile.println("Timestamp | Voltage | Current | Power | Battery");
+      offLED(BUILTIN_LED);
+    }
+    else
+    {
+      onLED(BUILTIN_LED);
+      while(1);
+    }
+    
+    //-----------------------------------------------
+    // Relay
+    
+    closeRelay(RELAY_PIN);
+
+    //-----------------------------------------------
+}
+
+//===================================================
+// LOOP
+//===================================================
+
+void loop()
+{
+    static unsigned long update = millis();
+
+    if((millis() - update) > UPDATE_RATE_MS)
+    {
+        DateTime time = rtc.now();
+
+        float sensorVoltage = sensor.readBusVoltage();
+        float sensorCurrent = sensor.readCurrent();
+        float sensorPower = sensor.readPower();
+        
+        float batteryVoltage = getBatteryVoltage(BATTERY_PIN);
+
+        char line[64];
+        sprintf(
+            line, 
+            "%04u-%02u-%02u %02u:%02u:%02u | %4.2f | %4.2f | %4.2f | %4.2f", 
+            time.year(), 
+            time.month(), 
+            time.day(), 
+            time.hour(), 
+            time.minute(), 
+            time.second(), 
+            sensorVoltage, 
+            sensorCurrent, 
+            sensorPower, 
+            batteryVoltage
+        );
+
+        if(ble.isConnected())
         {
-
+            ble.println(line);
+            ble.waitForOK();
         }
-    }
 
-    // TODO: Read Buttons
-    if(bA.isPressed())
-    {
+        if(Serial)
+        {
+            Serial.println(line);
+        }
 
-    }
-    if(bB.isPressed())
-    {
+        oled.clearDisplay();
+        oled.setCursor(0,0);
+        sprintf(line, "T: %02d:%02d:%02d", time.hour(), time.minute(), time.second());
+        oled.println(line);
+        sprintf(line, "V: %.2f V", sensorVoltage);
+        oled.println(line);
+        sprintf(line, "I: %.2f mA", sensorCurrent);
+        oled.println(line);
+        sprintf(line, "P: %.2f mW", sensorPower);
+        oled.println(line);
+        oled.setBattery(batteryVoltage);
+        oled.renderBattery();
+        oled.display();
 
-    }
-    if(bC.isPressed())
-    {
-
+        update = millis();
     }
 }
